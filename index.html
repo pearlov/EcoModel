@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoModel - Pembelajaran Aljabar Interaktif</title>
+    <style>
+        :root {
+            --primary: #2e7d32;
+            --primary-light: #4caf50;
+            --secondary: #0288d1;
+            --bg: #f4f6f8;
+            --card-bg: #ffffff;
+            --text: #333333;
+            --text-muted: #666666;
+            --accent: #ed6c02;
+            --border: #e0e0e0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        #app-container {
+            width: 100%;
+            max-width: 900px;
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 600px;
+        }
+
+        header {
+            background-color: var(--primary);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.2rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .step-indicator {
+            font-size: 0.85rem;
+            background-color: rgba(255, 255, 255, 0.2);
+            padding: 4px 12px;
+            border-radius: 16px;
+        }
+
+        main {
+            padding: 32px;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .screen {
+            display: none;
+            flex-direction: column;
+            gap: 20px;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 { font-size: 2rem; color: var(--primary); margin-bottom: 8px; }
+        h2 { font-size: 1.5rem; color: var(--primary); margin-bottom: 12px; }
+        p { line-height: 1.6; color: var(--text); margin-bottom: 12px; }
+
+        .btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            align-self: flex-start;
+        }
+
+        .btn:hover { background-color: #1b5e20; }
+        .btn:active { transform: scale(0.98); }
+        .btn-secondary { background-color: var(--secondary); }
+        .btn-secondary:hover { background-color: #01579b; }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .card {
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #fafafa;
+        }
+
+        .card:hover { border-color: var(--primary-light); background: #f0f7f0; }
+        .card.selected { border-color: var(--primary); background: #e8f5e9; font-weight: bold; }
+
+        .feedback {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-top: 12px;
+            display: none;
+        }
+
+        .feedback.correct { background-color: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; display: block; }
+        .feedback.incorrect { background-color: #ffebee; color: #c62828; border: 1px solid #ef9a9a; display: block; }
+
+        .interactive-panel {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .controls { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 16px; }
+        .results { flex: 1; min-width: 280px; background: #e3f2fd; padding: 20px; border-radius: 8px; border: 1px solid #90caf9; }
+
+        .slider-group { display: flex; flex-direction: column; gap: 6px; }
+        .slider-group label { display: flex; justify-content: space-between; font-weight: 600; font-size: 0.9rem; }
+        input[type=range] { width: 100%; accent-color: var(--primary); }
+
+        .equation-box {
+            background-color: #fff3e0;
+            border-left: 4px solid var(--accent);
+            padding: 12px 16px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin: 12px 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            resize: vertical;
+            margin-bottom: 12px;
+        }
+
+        footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #fafafa;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <header>
+        <div class="logo">🌱 EcoModel</div>
+        <div class="step-indicator" id="step-indicator">Tahap 1 dari 7</div>
+    </header>
+
+    <main>
+        <section id="screen-1" class="screen active">
+            <h1>BECOME AN ECO MODELLER</h1>
+            <p>Gunakan matematika dan bentuk aljabar untuk menyelesaikan masalah nyata pengelolaan sampah di sekolahmu.</p>
+            <div class="equation-box">EXPLORE → MODEL → SIMULATE → DECIDE</div>
+            <button class="btn" onclick="nextScreen(2)">🚀 MULAI MISI</button>
+        </section>
+
+        <section id="screen-2" class="screen">
+            <h2>🏫 Misi Masalah Nyata</h2>
+            <p>Sekolahmu memiliki <strong>400 siswa</strong> dan aktif selama <strong>20 hari sekolah</strong> dalam sebulan. Pihak sekolah ingin memperkirakan total sampah plastik yang dihasilkan per bulan.</p>
+            <p><strong>Pertanyaan:</strong> Besaran mana yang nilainya <em>belum diketahui secara pasti</em> dan dapat diwakili oleh variabel <strong>x</strong>?</p>
+            
+            <div class="card-grid">
+                <div class="card" onclick="selectCard(this, 'wrong')">Jumlah Siswa (400)</div>
+                <div class="card" onclick="selectCard(this, 'wrong')">Hari Sekolah (20 Hari)</div>
+                <div class="card" onclick="selectCard(this, 'correct')">Sampah per siswa per hari (x gram)</div>
+            </div>
+            
+            <div id="feedback-2" class="feedback"></div>
+            <button id="btn-2" class="btn" onclick="nextScreen(3)" style="display:none;">Lanjut Membangun Model ➔</button>
+        </section>
+
+        <section id="screen-3" class="screen">
+            <h2>🧩 Model Builder</h2>
+            <p>1. Sampah seluruh siswa dalam 1 hari = <code>400 × x = 400x</code></p>
+            <p>2. Sampah seluruh siswa dalam 20 hari = <code>400x × 20 = 8000x</code></p>
+            
+            <div class="equation-box">Model Utama: S = 8000x</div>
+            
+            <p><strong>Evaluasi Aljabar (Substitusi):</strong> Jika pengukuran menunjukkan rata-rata setiap siswa menghasilkan <strong>x = 25 gram</strong> sampah per hari, berapa total sampah per bulan (S)?</p>
+            
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
+                <input type="number" id="substitute-input" placeholder="Masukkan nilai S (gram)" style="padding:10px; border-radius:6px; border:1px solid var(--border);">
+                <button class="btn btn-secondary" onclick="checkSubstitution()">Hitung & Cek</button>
+            </div>
+
+            <div id="feedback-3" class="feedback"></div>
+            <button id="btn-3" class="btn" onclick="nextScreen(4)" style="display:none;">Masuk ke Eco Simulator ➔</button>
+        </section>
+
+        <section id="screen-4" class="screen">
+            <h2>🎛️ Eco Simulator</h2>
+            <p>Model dikembangkan untuk menguji strategi pengurangan sampah: <strong>S = 20n(x - r)</strong></p>
+            <p style="font-size:0.9rem; color:var(--text-muted);">Dimana: <i>n</i> = Jumlah siswa, <i>x</i> = Sampah dasar (g), <i>r</i> = Pengurangan sampah (g)</p>
+
+            <div class="interactive-panel">
+                <div class="controls">
+                    <div class="slider-group">
+                        <label>Jumlah Siswa (n): <span id="val-n">400</span></label>
+                        <input type="range" id="input-n" min="100" max="600" value="400" oninput="updateSimulator()">
+                    </div>
+                    <div class="slider-group">
+                        <label>Sampah per Siswa / x (gram): <span id="val-x">25</span></label>
+                        <input type="range" id="input-x" min="5" max="50" value="25" oninput="updateSimulator()">
+                    </div>
+                    <div class="slider-group">
+                        <label>Pengurangan Program / r (gram): <span id="val-r">0</span></label>
+                        <input type="range" id="input-r" min="0" max="15" value="0" oninput="updateSimulator()">
+                    </div>
+                </div>
+
+                <div class="results">
+                    <h3>HASIL MODEL SIMULASI</h3>
+                    <p style="margin-top:10px;">Sampah Awal: <strong id="res-awal">200 kg</strong></p>
+                    <p>Sampah Akhir: <strong id="res-akhir" style="color:var(--primary); font-size:1.3rem;">200 kg</strong></p>
+                    <p>Persentase Reduksi: <strong id="res-reduksi" style="color:var(--accent);">0%</strong></p>
+                </div>
+            </div>
+
+            <button class="btn" onclick="nextScreen(5)" style="margin-top:16px;">Lanjut ke Strategy Lab ➔</button>
+        </section>
+
+        <section id="screen-5" class="screen">
+            <h2>🎯 Strategy Lab</h2>
+            <p><strong>Tantangan Kepala Sekolah:</strong> Kurangi sampah sekolah minimal <strong>30%</strong> dari kondisi awal!</p>
+            <p>Pilih kombinasi strategi berikut untuk meningkatkan nilai pengurangan (r):</p>
+
+            <div class="card-grid">
+                <div class="card" id="strat-1" onclick="toggleStrategy(this, 3)">
+                    🥤 <strong>Program Tumbler</strong>
+                    <p style="font-size:0.85rem; margin-top:4px;">Mengurangi 3g sampah/siswa</p>
+                </div>
+                <div class="card" id="strat-2" onclick="toggleStrategy(this, 5)">
+                    🛍️ <strong>Kantin Minim Plastik</strong>
+                    <p style="font-size:0.85rem; margin-top:4px;">Mengurangi 5g sampah/siswa</p>
+                </div>
+                <div class="card" id="strat-3" onclick="toggleStrategy(this, 2)">
+                    📢 <strong>Kampanye Edukasi</strong>
+                    <p style="font-size:0.85rem; margin-top:4px;">Mengurangi 2g sampah/siswa</p>
+                </div>
+            </div>
+
+            <div class="equation-box">
+                Total Reduksi (r): <span id="lab-r">0</span> gram/siswa | Persentase: <span id="lab-percent">0%</span>
+            </div>
+
+            <div id="feedback-5" class="feedback"></div>
+            <button id="btn-5" class="btn" onclick="nextScreen(6)" style="display:none;">Hadapi Reality Check ➔</button>
+        </section>
+
+        <section id="screen-6" class="screen">
+            <h2>⚠️ Reality Check & Revisi Model</h2>
+            <p><strong>Data Baru Lapangan:</strong> Ternyata hanya <strong>80% (0,8)</strong> siswa yang konsisten menjalankan program lingkungan tersebut.</p>
+            <p>Model matematika harus direvisi untuk memperhitungkan tingkat kepatuhan tersebut:</p>
+
+            <div class="equation-box">Model Revisi: S = 20n(x - 0.8r)</div>
+
+            <p>Dengan efektivitas strategi yang turun menjadi 80%, apakah reduksi sampah sekolahmu masih mencapai target minimal 30%?</p>
+
+            <div id="reality-status" class="feedback correct">Memeriksa data...</div>
+
+            <button class="btn" onclick="nextScreen(7)" style="margin-top:12px;">Ambil Keputusan Akhir ➔</button>
+        </section>
+
+        <section id="screen-7" class="screen">
+            <h2>🌱 Eco Decision & Refleksi</h2>
+            <p>Jelaskan alasan matematis mengapa kombinasi strategi yang kamu pilih berhasil atau perlu disesuaikan kembali berdasarkan model revisi:</p>
+
+            <textarea id="reflection-text" placeholder="Tuliskan argumenmu di sini (contoh: Variabel r sangat mempengaruhi nilai total S, namun faktor kepatuhan 0.8 menurunkan efektivitasnya sehingga...)"></textarea>
+
+            <button class="btn" onclick="finishMission()">🎉 SELESAI MISI</button>
+        </section>
+    </main>
+
+    <footer>
+        <button id="btn-back" class="btn btn-secondary" onclick="prevScreen()" style="display:none;">⬅ Kembali</button>
+        <span style="font-size:0.85rem; color:var(--text-muted);">EcoModel v1.0 — Mathematical Modelling Kelas VII</span>
+    </footer>
+</div>
+
+<script>
+    let currentScreen = 1;
+    let totalScreens = 7;
+    let selectedStrategiesR = 0;
+
+    function updateStepIndicator() {
+        document.getElementById('step-indicator').innerText = `Tahap ${currentScreen} dari ${totalScreens}`;
+        document.getElementById('btn-back').style.display = currentScreen > 1 ? 'block' : 'none';
+    }
+
+    function showScreen(screenNumber) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(`screen-${screenNumber}`).classList.add('active');
+        currentScreen = screenNumber;
+        updateStepIndicator();
+
+        if(screenNumber === 6) {
+            checkRealityCheck();
+        }
+    }
+
+    function nextScreen(targetScreen) {
+        if(targetScreen <= totalScreens) {
+            showScreen(targetScreen);
+        }
+    }
+
+    function prevScreen() {
+        if(currentScreen > 1) {
+            showScreen(currentScreen - 1);
+        }
+    }
+
+    // Tahap 2 Logic
+    function selectCard(element, type) {
+        let feedback = document.getElementById('feedback-2');
+        let btn = document.getElementById('btn-2');
+        
+        document.querySelectorAll('#screen-2 .card').forEach(c => c.classList.remove('selected'));
+        element.classList.add('selected');
+
+        if(type === 'correct') {
+            feedback.className = 'feedback correct';
+            feedback.innerText = '✅ Tepat sekali! Banyaknya sampah per siswa per hari (x) adalah besaran yang nilainya belum diketahui pasti.';
+            btn.style.display = 'inline-block';
+        } else {
+            feedback.className = 'feedback incorrect';
+            feedback.innerText = '❌ Kurang tepat. Jumlah siswa (400) dan hari sekolah (20) adalah nilai yang sudah tetap (konstanta).';
+            btn.style.display = 'none';
+        }
+    }
+
+    // Tahap 3 Logic
+    function checkSubstitution() {
+        let val = parseInt(document.getElementById('substitute-input').value);
+        let feedback = document.getElementById('feedback-3');
+        let btn = document.getElementById('btn-3');
+
+        if(val === 200000) {
+            feedback.className = 'feedback correct';
+            feedback.innerText = '🎉 Luar biasa! S = 8000 (25) = 200.000 gram atau setara dengan 200 kg sampah plastik per bulan.';
+            btn.style.display = 'inline-block';
+        } else {
+            feedback.className = 'feedback incorrect';
+            feedback.innerText = '💡 Coba hitung kembali: 8000 dikali 25.';
+            btn.style.display = 'none';
+        }
+    }
+
+    // Tahap 4 Logic
+    function updateSimulator() {
+        let n = parseInt(document.getElementById('input-n').value);
+        let x = parseInt(document.getElementById('input-x').value);
+        let r = parseInt(document.getElementById('input-r').value);
+
+        document.getElementById('val-n').innerText = n;
+        document.getElementById('val-x').innerText = x;
+        document.getElementById('val-r').innerText = r;
+
+        let totalAwalKg = (20 * n * x) / 1000;
+        let totalAkhirKg = (20 * n * (x - r)) / 1000;
+        let percentReduksi = Math.round(((totalAwalKg - totalAkhirKg) / totalAwalKg) * 100);
+
+        document.getElementById('res-awal').innerText = `${totalAwalKg} kg`;
+        document.getElementById('res-akhir').innerText = `${totalAkhirKg} kg`;
+        document.getElementById('res-reduksi').innerText = `${percentReduksi}%`;
+    }
+
+    // Tahap 5 Logic
+    function toggleStrategy(card, rValue) {
+        card.classList.toggle('selected');
+        
+        selectedStrategiesR = 0;
+        if(document.getElementById('strat-1').classList.contains('selected')) selectedStrategiesR += 3;
+        if(document.getElementById('strat-2').classList.contains('selected')) selectedStrategiesR += 5;
+        if(document.getElementById('strat-3').classList.contains('selected')) selectedStrategiesR += 2;
+
+        let baseTextX = 25;
+        let percent = Math.round((selectedStrategiesR / baseTextX) * 100);
+
+        document.getElementById('lab-r').innerText = selectedStrategiesR;
+        document.getElementById('lab-percent').innerText = `${percent}%`;
+
+        let feedback = document.getElementById('feedback-5');
+        let btn = document.getElementById('btn-5');
+
+        if(percent >= 30) {
+            feedback.className = 'feedback correct';
+            feedback.innerText = `🎉 Target tercapai! Reduksi berhasil mencapai ${percent}% (minimal 30%).`;
+            btn.style.display = 'inline-block';
+        } else {
+            feedback.className = 'feedback incorrect';
+            feedback.innerText = `⚠️ Reduksi baru ${percent}%. Tambahkan strategi lain untuk mencapai target 30%!`;
+            btn.style.display = 'none';
+        }
+    }
+
+    // Tahap 6 Logic
+    function checkRealityCheck() {
+        let baseTextX = 25;
+        let effectiveR = selectedStrategiesR * 0.8;
+        let revisedPercent = Math.round((effectiveR / baseTextX) * 100);
+
+        let statusBox = document.getElementById('reality-status');
+
+        if(revisedPercent >= 30) {
+            statusBox.className = 'feedback correct';
+            statusBox.innerHTML = `✅ <strong>Hebat!</strong> Meskipun hanya 80% siswa yang patuh, efektivitas strategi kamu masih mencapai <strong>${revisedPercent}%</strong> (tetap di atas target 30%).`;
+        } else {
+            statusBox.className = 'feedback incorrect';
+            statusBox.innerHTML = `⚠️ <strong>Perhatian!</strong> Karena faktor kepatuhan 80%, persentase reduksi turun menjadi <strong>${revisedPercent}%</strong> (di bawah target 30%). Kamu perlu menyesuaikan strategi di masa depan.`;
+        }
+    }
+
+    // Tahap 7 Logic
+    function finishMission() {
+        let text = document.getElementById('reflection-text').value;
+        if(text.trim() === '') {
+            alert('Mohon isi refleksi terlebih dahulu sebelum menyelesaikan misi.');
+        } else {
+            alert('🎉 Selamat! Kamu telah menyelesaikan seluruh rangkaian misi EcoModel.');
+            location.reload();
+        }
+    }
+</script>
+</body>
+</html>
