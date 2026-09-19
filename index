@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FluidGraph: Covariational Reasoning Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #f8fafc; }
+        canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+        .canvas-container { position: relative; width: 100%; height: 100%; border-radius: 0.5rem; overflow: hidden; background-color: #ffffff; box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.05); border: 1px solid #e2e8f0; }
+        .panel { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+    </style>
+</head>
+<body class="flex flex-col h-screen text-slate-800 font-sans">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-center z-10 shrink-0">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800 tracking-tight">FluidGraph</h1>
+            <p class="text-sm text-slate-500 font-medium">Covariational Reasoning Simulator</p>
+        </div>
+        <div class="mt-3 md:mt-0 bg-blue-50 text-blue-800 px-4 py-2 rounded-full font-semibold text-sm border border-blue-200 shadow-sm" id="instructionText">
+            Step 1: Select a shape below.
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex flex-col md:flex-row gap-4 p-4 min-h-0 bg-slate-50">
+        <!-- Left Panel: Container Simulation -->
+        <section class="flex-1 flex flex-col bg-white rounded-xl panel overflow-hidden">
+            <div class="px-4 py-2 bg-slate-100 border-b border-slate-200 font-semibold text-slate-700 text-sm flex justify-between items-center shrink-0">
+                <span>Simulation View</span>
+                <span class="text-xs font-normal text-slate-500">Water flowing at constant rate</span>
+            </div>
+            <div class="flex-1 p-2 relative min-h-0">
+                <div class="canvas-container">
+                    <canvas id="containerCanvas"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Panel: Graph Prediction & Result -->
+        <section class="flex-1 flex flex-col bg-white rounded-xl panel overflow-hidden">
+            <div class="px-4 py-2 bg-slate-100 border-b border-slate-200 font-semibold text-slate-700 text-sm flex justify-between items-center shrink-0">
+                <span>Mathematical Model</span>
+                <span class="text-xs font-normal text-slate-500" id="graphStatusText">Awaiting Prediction...</span>
+            </div>
+            <div class="flex-1 p-2 relative min-h-0">
+                <div class="canvas-container cursor-crosshair">
+                    <canvas id="graphCanvas"></canvas>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer Controls -->
+    <footer class="bg-white border-t border-slate-200 p-4 shrink-0 flex flex-col sm:flex-row justify-between items-center gap-4 z-10">
+        <div class="flex items-center gap-3">
+            <label for="shapeSelect" class="font-semibold text-slate-700 text-sm">Container Shape:</label>
+            <select id="shapeSelect" class="bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 outline-none font-medium transition-colors">
+                <option value="cylinder">Cylinder (Straight)</option>
+                <option value="erlenmeyer">Erlenmeyer (Narrowing Top)</option>
+                <option value="funnel">Funnel (Widening Top)</option>
+            </select>
+        </div>
+        
+        <div class="flex items-center gap-3 w-full sm:w-auto">
+            <button id="clearBtn" class="flex-1 sm:flex-none px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:ring-4 focus:outline-none focus:ring-slate-200 transition-colors">
+                Clear Prediction
+            </button>
+            <button id="playBtn" disabled class="flex-1 sm:flex-none px-6 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm">
+                ▶ Play Simulation
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        // State Management
+        const state = {
+            shape: 'cylinder',
+            userPoints: [], // Array of normalized coordinates {t: 0-1, h: 0-1}
+            isDrawing: false,
+            isPlaying: false,
+            progress: 0, // Time progress 0 to 1
+            animationId: null,
+            duration: 4000, // Simulation duration in ms
+            startTime: 0
+        };
+
+        // DOM Elements
+        const containerCanvas = document.getElementById('containerCanvas');
+        const graphCanvas = document.getElementById('graphCanvas');
+        const ctxContainer = containerCanvas.getContext('2d');
+        const ctxGraph = graphCanvas.getContext('2d');
+        const shapeSelect = document.getElementById('shapeSelect');
+        const clearBtn = document.getElementById('clearBtn');
+        const playBtn = document.getElementById('playBtn');
+        const instructionText = document.getElementById('instructionText');
+        const graphStatusText = document.getElementById('graphStatusText');
+
+        // Layout settings for Graph
+        const graphConfig = {
+            paddingLeft: 50,
+            paddingBottom: 40,
+            paddingTop: 30,
+            paddingRight: 30
+        };
+
+        /**
+         * Mathematical logic for relating Volume (equivalent to Time, since rate is constant) to Height.
+         * t (time) goes from 0 to 1.
+         * h (height) goes from 0 to 1.
+         */
+        const mathModels = {
+            cylinder: {
+                // Linear: width is constant. h(t) = t
+                getHeightAtTime: (t) => t,
+                getWidthAtHeight: (h) => 0.4, // Normalized width
+                drawShape: (ctx, cx, bottomY, heightPx, widthPx) => {
+                    const w = widthPx * 0.4;
+                    ctx.rect(cx - w/2, bottomY - heightPx, w, heightPx);
+                }
+            },
+            erlenmeyer: {
+                // Narrowing top: Area decreases, so height increases faster.
+                // Math: Width(h) = 0.6 - 0.4h. (goes from 0.6 to 0.2)
+                // Volume(h) = integral of width = 0.6h - 0.2h^2
+                // Total Volume = 0.4. V(t) = 0.4t.
+                // 0.2h^2 - 0.6h + 0.4t = 0.
+                // Using quadratic formula: h = (0.6 - sqrt(0.36 - 0.32t)) / 0.4
+                getHeightAtTime: (t) => {
+                    const a = 0.2, b = -0.6, c = 0.4 * t;
+                    const discriminant = b*b - 4*a*c;
+                    if (discriminant < 0) return 1; // Safeguard
+                    return (-b - Math.sqrt(discriminant)) / (2*a);
+                },
+                getWidthAtHeight: (h) => 0.6 - 0.4 * h,
+                drawShape: (ctx, cx, bottomY, heightPx, widthPx) => {
+                    const wB = widthPx * 0.6;
+                    const wT = widthPx * 0.2;
+                    ctx.moveTo(cx - wB/2, bottomY);
+                    ctx.lineTo(cx + wB/2, bottomY);
+                    ctx.lineTo(cx + wT/2, bottomY - heightPx);
+                    ctx.lineTo(cx - wT/2, bottomY - heightPx);
+                    ctx.closePath();
+                }
+            },
+            funnel: {
+                // Widening top: Area increases, so height increases slower.
+                // Math: Width(h) = 0.2 + 0.4h. (goes from 0.2 to 0.6)
+                // Volume(h) = 0.2h + 0.2h^2
+                // Total Volume = 0.4. V(t) = 0.4t.
+                // 0.2h^2 + 0.2h - 0.4t = 0.
+                // h = (-0.2 + sqrt(0.04 + 0.32t)) / 0.4
+                getHeightAtTime: (t) => {
+                    const a = 0.2, b = 0.2, c = -0.4 * t;
+                    const discriminant = b*b - 4*a*c;
+                    if (discriminant < 0) return 0;
+                    return (-b + Math.sqrt(discriminant)) / (2*a);
+                },
+                getWidthAtHeight: (h) => 0.2 + 0.4 * h,
+                drawShape: (ctx, cx, bottomY, heightPx, widthPx) => {
+                    const wB = widthPx * 0.2;
+                    const wT = widthPx * 0.6;
+                    ctx.moveTo(cx - wB/2, bottomY);
+                    ctx.lineTo(cx + wB/2, bottomY);
+                    ctx.lineTo(cx + wT/2, bottomY - heightPx);
+                    ctx.lineTo(cx - wT/2, bottomY - heightPx);
+                    ctx.closePath();
+                }
+            }
+        };
+
+        function resizeCanvases() {
+            const setSize = (canvas, ctx) => {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = rect.width * dpr;
+                canvas.height = rect.height * dpr;
+                canvas.style.width = `${rect.width}px`;
+                canvas.style.height = `${rect.height}px`;
+                ctx.scale(dpr, dpr);
+            };
+            setSize(containerCanvas, ctxContainer);
+            setSize(graphCanvas, ctxGraph);
+            render();
+        }
+
+        window.addEventListener('resize', resizeCanvases);
+
+        // Helper to convert screen to internal normalized coordinates for graph
+        function getNormalizedGraphCoords(evt) {
+            const rect = graphCanvas.getBoundingClientRect();
+            let clientX, clientY;
+            if (evt.touches) {
+                clientX = evt.touches[0].clientX;
+                clientY = evt.touches[0].clientY;
+            } else {
+                clientX = evt.clientX;
+                clientY = evt.clientY;
+            }
+            
+            const px = clientX - rect.left;
+            const py = clientY - rect.top;
+
+            const plotWidth = rect.width - graphConfig.paddingLeft - graphConfig.paddingRight;
+            const plotHeight = rect.height - graphConfig.paddingBottom - graphConfig.paddingTop;
+
+            let t = (px - graphConfig.paddingLeft) / plotWidth;
+            let h = 1.0 - ((py - graphConfig.paddingTop) / plotHeight);
+
+            // Clamp values
+            t = Math.max(0, Math.min(1, t));
+            h = Math.max(0, Math.min(1, h));
+
+            return { t, h };
+        }
+
+        // Graph Canvas Interactions
+        function startDrawing(e) {
+            if (state.isPlaying || state.progress > 0) return;
+            e.preventDefault();
+            state.isDrawing = true;
+            state.userPoints = [getNormalizedGraphCoords(e)];
+            updateUI();
+            render();
+        }
+
+        function draw(e) {
+            if (!state.isDrawing || state.isPlaying) return;
+            e.preventDefault();
+            const pt = getNormalizedGraphCoords(e);
+            
+            // Optional: Enforce monotonic X (Time only goes forward)
+            const lastPt = state.userPoints[state.userPoints.length - 1];
+            if (pt.t > lastPt.t) {
+                state.userPoints.push(pt);
+                render();
+            }
+        }
+
+        function stopDrawing(e) {
+            if (state.isDrawing) {
+                state.isDrawing = false;
+                updateUI();
+            }
+        }
+
+        graphCanvas.addEventListener('mousedown', startDrawing);
+        graphCanvas.addEventListener('mousemove', draw);
+        window.addEventListener('mouseup', stopDrawing);
+
+        graphCanvas.addEventListener('touchstart', startDrawing, {passive: false});
+        graphCanvas.addEventListener('touchmove', draw, {passive: false});
+        window.addEventListener('touchend', stopDrawing);
+
+        function renderContainer() {
+            const rect = containerCanvas.parentElement.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            
+            ctxContainer.clearRect(0, 0, w, h);
+
+            // Drawing config
+            const cx = w / 2;
+            const bottomY = h * 0.85;
+            const heightPx = h * 0.7; // Max height of container
+            const widthPx = w * 0.8; // Reference max width
+
+            const model = mathModels[state.shape];
+
+            // 1. Draw Water Fill
+            if (state.progress > 0) {
+                const currentT = state.progress;
+                const currentH = model.getHeightAtTime(currentT);
+                const currentHeightPx = currentH * heightPx;
+                
+                ctxContainer.fillStyle = 'rgba(59, 130, 246, 0.4)'; // Tailwind blue-500 with opacity
+                ctxContainer.beginPath();
+                
+                const wB = model.getWidthAtHeight(0) * widthPx;
+                const wT = model.getWidthAtHeight(currentH) * widthPx;
+                
+                ctxContainer.moveTo(cx - wB/2, bottomY);
+                ctxContainer.lineTo(cx + wB/2, bottomY);
+                ctxContainer.lineTo(cx + wT/2, bottomY - currentHeightPx);
+                ctxContainer.lineTo(cx - wT/2, bottomY - currentHeightPx);
+                
+                ctxContainer.closePath();
+                ctxContainer.fill();
+
+                // Draw water surface line
+                ctxContainer.beginPath();
+                ctxContainer.moveTo(cx - wT/2, bottomY - currentHeightPx);
+                ctxContainer.lineTo(cx + wT/2, bottomY - currentHeightPx);
+                ctxContainer.strokeStyle = 'rgba(37, 99, 235, 0.8)';
+                ctxContainer.lineWidth = 2;
+                ctxContainer.stroke();
+            }
+
+            // 2. Draw Container Outline
+            ctxContainer.beginPath();
+            model.drawShape(ctxContainer, cx, bottomY, heightPx, widthPx);
+            ctxContainer.strokeStyle = '#475569'; // slate-600
+            ctxContainer.lineWidth = 3;
+            ctxContainer.lineJoin = 'round';
+            ctxContainer.stroke();
+            
+            // Add slight glare/glass effect
+            ctxContainer.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctxContainer.fill();
+        }
+
+        function renderGraph() {
+            const rect = graphCanvas.parentElement.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            
+            ctxGraph.clearRect(0, 0, w, h);
+
+            const plotW = w - graphConfig.paddingLeft - graphConfig.paddingRight;
+            const plotH = h - graphConfig.paddingBottom - graphConfig.paddingTop;
+            const oX = graphConfig.paddingLeft;
+            const oY = h - graphConfig.paddingBottom;
+
+            // Helper to map (t, h) to (x, y) pixels
+            const getPx = (t, ht) => ({
+                x: oX + t * plotW,
+                y: oY - ht * plotH
+            });
+
+            // 1. Draw Grid and Axes
+            ctxGraph.strokeStyle = '#e2e8f0'; // slate-200
+            ctxGraph.lineWidth = 1;
+            ctxGraph.beginPath();
+            // Horizontal grid
+            for(let i=0; i<=5; i++) {
+                let y = oY - (i/5)*plotH;
+                ctxGraph.moveTo(oX, y);
+                ctxGraph.lineTo(oX + plotW, y);
+            }
+            // Vertical grid
+            for(let i=0; i<=5; i++) {
+                let x = oX + (i/5)*plotW;
+                ctxGraph.moveTo(x, oY);
+                ctxGraph.lineTo(x, oY - plotH);
+            }
+            ctxGraph.stroke();
+
+            // Axes lines
+            ctxGraph.strokeStyle = '#64748b'; // slate-500
+            ctxGraph.lineWidth = 2;
+            ctxGraph.beginPath();
+            ctxGraph.moveTo(oX, oY - plotH);
+            ctxGraph.lineTo(oX, oY);
+            ctxGraph.lineTo(oX + plotW, oY);
+            ctxGraph.stroke();
+
+            // Labels
+            ctxGraph.fillStyle = '#475569';
+            ctxGraph.font = 'bold 12px sans-serif';
+            ctxGraph.textAlign = 'center';
+            ctxGraph.fillText('Time (Volume)', oX + plotW/2, h - 10);
+            
+            ctxGraph.save();
+            ctxGraph.translate(15, oY - plotH/2);
+            ctxGraph.rotate(-Math.PI/2);
+            ctxGraph.fillText('Height of Water', 0, 0);
+            ctxGraph.restore();
+
+            // 2. Draw User Prediction (Dashed Red)
+            if (state.userPoints.length > 0) {
+                ctxGraph.beginPath();
+                const startPt = getPx(state.userPoints[0].t, state.userPoints[0].h);
+                ctxGraph.moveTo(startPt.x, startPt.y);
+                for (let i = 1; i < state.userPoints.length; i++) {
+                    const pt = getPx(state.userPoints[i].t, state.userPoints[i].h);
+                    ctxGraph.lineTo(pt.x, pt.y);
+                }
+                ctxGraph.strokeStyle = '#ef4444'; // red-500
+                ctxGraph.lineWidth = 3;
+                ctxGraph.setLineDash([8, 8]);
+                ctxGraph.lineCap = 'round';
+                ctxGraph.lineJoin = 'round';
+                ctxGraph.stroke();
+                ctxGraph.setLineDash([]); // Reset
+            }
+
+            // 3. Draw Actual Mathematical Graph (Solid Blue)
+            if (state.progress > 0) {
+                const model = mathModels[state.shape];
+                ctxGraph.beginPath();
+                ctxGraph.moveTo(oX, oY); // Start at 0,0
+                
+                // Draw up to current progress
+                const steps = Math.floor(plotW * state.progress); 
+                for (let i = 1; i <= steps; i++) {
+                    let t = i / plotW;
+                    let ht = model.getHeightAtTime(t);
+                    let pt = getPx(t, ht);
+                    ctxGraph.lineTo(pt.x, pt.y);
+                }
+
+                ctxGraph.strokeStyle = '#2563eb'; // blue-600
+                ctxGraph.lineWidth = 4;
+                ctxGraph.lineCap = 'round';
+                ctxGraph.lineJoin = 'round';
+                ctxGraph.stroke();
+
+                // Draw indicator dot
+                const currentT = state.progress;
+                const currentH = model.getHeightAtTime(currentT);
+                const dotPt = getPx(currentT, currentH);
+                
+                ctxGraph.beginPath();
+                ctxGraph.arc(dotPt.x, dotPt.y, 6, 0, Math.PI*2);
+                ctxGraph.fillStyle = '#2563eb';
+                ctxGraph.fill();
+                ctxGraph.lineWidth = 2;
+                ctxGraph.strokeStyle = '#ffffff';
+                ctxGraph.stroke();
+            }
+        }
+
+        function render() {
+            renderContainer();
+            renderGraph();
+        }
+
+        // Animation Loop
+        function animate(timestamp) {
+            if (!state.startTime) state.startTime = timestamp;
+            const elapsed = timestamp - state.startTime;
+            
+            state.progress = Math.min(elapsed / state.duration, 1.0);
+            
+            render();
+            
+            if (state.progress < 1.0) {
+                state.animationId = requestAnimationFrame(animate);
+            } else {
+                state.isPlaying = false;
+                updateUI();
+                instructionText.innerHTML = "Simulation complete. Compare your prediction!";
+                instructionText.className = "mt-3 md:mt-0 bg-green-50 text-green-800 px-4 py-2 rounded-full font-semibold text-sm border border-green-200 shadow-sm";
+            }
+        }
+
+        function startSimulation() {
+            if (state.userPoints.length === 0) return;
+            state.isPlaying = true;
+            state.progress = 0;
+            state.startTime = 0;
+            updateUI();
+            instructionText.innerHTML = "Observing covariational change...";
+            instructionText.className = "mt-3 md:mt-0 bg-purple-50 text-purple-800 px-4 py-2 rounded-full font-semibold text-sm border border-purple-200 shadow-sm";
+            state.animationId = requestAnimationFrame(animate);
+        }
+
+        function resetSimulation() {
+            cancelAnimationFrame(state.animationId);
+            state.isPlaying = false;
+            state.progress = 0;
+            render();
+            updateUI();
+        }
+
+        function clearPrediction() {
+            resetSimulation();
+            state.userPoints = [];
+            render();
+            updateUI();
+            instructionText.innerHTML = "Step 2: Draw your predicted graph (red line) on the canvas.";
+            instructionText.className = "mt-3 md:mt-0 bg-orange-50 text-orange-800 px-4 py-2 rounded-full font-semibold text-sm border border-orange-200 shadow-sm";
+        }
+
+        // UI Updates
+        function updateUI() {
+            shapeSelect.disabled = state.isPlaying;
+            
+            if (state.userPoints.length > 0) {
+                playBtn.disabled = state.isPlaying;
+                if (!state.isPlaying && state.progress === 0) {
+                    instructionText.innerHTML = "Step 3: Click Play to validate your hypothesis!";
+                    instructionText.className = "mt-3 md:mt-0 bg-blue-50 text-blue-800 px-4 py-2 rounded-full font-semibold text-sm border border-blue-200 shadow-sm";
+                    graphStatusText.innerHTML = "<span class='text-red-500 font-bold'>Prediction Recorded</span>";
+                }
+            } else {
+                playBtn.disabled = true;
+                instructionText.innerHTML = "Step 2: Draw your predicted graph on the right canvas.";
+                instructionText.className = "mt-3 md:mt-0 bg-orange-50 text-orange-800 px-4 py-2 rounded-full font-semibold text-sm border border-orange-200 shadow-sm";
+                graphStatusText.innerHTML = "Awaiting Prediction...";
+            }
+
+            if (state.isPlaying) {
+                graphStatusText.innerHTML = "<span class='text-blue-600 font-bold'>Simulating Actual Graph...</span>";
+            } else if (state.progress >= 1.0) {
+                graphStatusText.innerHTML = "<span class='text-green-600 font-bold'>Validation Complete</span>";
+            }
+        }
+
+        // Event Listeners
+        shapeSelect.addEventListener('change', (e) => {
+            state.shape = e.target.value;
+            clearPrediction();
+        });
+
+        playBtn.addEventListener('click', startSimulation);
+        clearBtn.addEventListener('click', clearPrediction);
+
+        // Initial Setup
+        setTimeout(() => {
+            resizeCanvases();
+            updateUI();
+        }, 100);
+
+    </script>
+</body>
+</html>
